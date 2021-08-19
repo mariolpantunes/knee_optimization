@@ -1,0 +1,2 @@
+git+git://github.com/mariolpantunes/knee@main#egg=knee
+git+git://github.com/mariolpantunes/optimization@main#egg=optimization
