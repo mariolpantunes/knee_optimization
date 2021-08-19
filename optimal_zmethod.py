@@ -9,16 +9,19 @@ __status__ = 'Development'
 import os
 import csv
 import math
+from tokenize import ContStr
+import joblib
+import logging
+import tempfile
 import argparse
 import numpy as np
-import logging
 
 
 import knee.rdp as rdp
+import optimization.de as de
 import knee.zmethod as zmethod
-import knee.evaluation as evaluation
-import optimization.ga as ga
 import knee.postprocessing as pp
+import knee.evaluation as evaluation
 
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -32,24 +35,35 @@ x_max = None
 y_range = None
 expected = None
 
+# Ram cache
 cost_cache = {}
-rdp_cache = {}
+
+# joblib cache
+location = tempfile.gettempdir()
+memory = joblib.Memory(location, verbose=0)
 
 
-def compute_knee_points(r, dx, dy, dz, e):
+# RDP cache
+rdp_cache = memory.cache(rdp.rdp)
+
+
+def compute_knee_cost(r, dx, dy, dz, e):
     # RDP
-    if r in rdp_cache:
-        points_reduced, removed = rdp_cache[r]
-    else:
-        points_reduced, removed = rdp.rdp(points, r)
-        rdp_cache[r] = (points_reduced, removed)
-
+    points_reduced, removed = rdp_cache(points, r)
+        
     ## Knee detection code ##
     knees = zmethod.knees(points_reduced, dx=dx, dy=dy, dz=dz, x_max=x_max, y_range=y_range)
     knees = knees[knees>0]
     knees = pp.add_points_even(points, points_reduced, knees, removed, tx=e, ty=e)
 
-    return knees
+    cost_a = evaluation.rmspe(points, knees, expected, evaluation.Strategy.knees)
+    cost_b = evaluation.rmspe(points, knees, expected, evaluation.Strategy.expected)
+    cost = (cost_a+cost_b)/2.0
+
+    return cost
+
+# Knees cache
+#cost_cache = memory.cache(compute_knee_cost)
 
 
 def objective(p):
@@ -60,39 +74,12 @@ def objective(p):
     dz = round(p[3]*100.0)/100.0
     e = round(p[4]*100.0)/100.0
 
-    # Check if cache already has these values
-    cost = float('inf')
-    if (r,dx, dy, dz, e) in cost_cache:
-        cost = cost_cache[(r,dx, dy, dz, e)]
+    if (r, dx, dy, dz, e) in cost_cache:
+        return cost_cache[(r, dx, dy, dz, e)]
     else:
-        knees = compute_knee_points(r, dx, dy, dz, e)
-        
-        # penalize solutions with a single knee
-        if len(knees) == 1:
-            cost = float('inf')
-        else:
-            cost = evaluation.rmspe(points, knees, expected, evaluation.Strategy.knees)
-        cost_cache[(r,dx, dy, dz, e)] = cost
-
-    return cost
-
-
-# crossover two parents to create two children
-def crossover(p1, p2, r_cross):
-    c1 = np.array([p1[0], p2[1], p1[2], p2[3], p1[4]])
-    c2 = np.array([p2[0], p1[1], p2[2], p1[3], p2[4]])
-    return [c1, c2]
-
-
-# mutation operator
-def mutation(candidate, r_mut, bounds):
-    if np.random.rand() < r_mut:
-        solution = ga.get_random_solution(bounds)
-        candidate[0] = solution[0]
-        candidate[1] = solution[1]
-        candidate[2] = solution[2]
-        candidate[3] = solution[3]
-        candidate[4] = solution[4]
+        cost = compute_knee_cost(r, dx, dy, dz, e)
+        cost_cache[(r, dx, dy, dz, e)] = cost
+        return cost
 
 
 def main(args):
@@ -122,7 +109,8 @@ def main(args):
 
     # Run the Genetic Optimization
     bounds = np.asarray([[.85, .95], [.01, .1], [.01, .1], [.01, .1], [.01, .1]])
-    best, score = ga.genetic_algorithm(objective, bounds, crossover, mutation, n_iter=args.l, n_pop=args.p)
+    #best, score = de.differential_evolution(objective, bounds, crossover, mutation, n_iter=args.l, n_pop=args.p)
+    best, score = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p)
 
     # Round input parameters
     r = round(best[0]*100.0)/100.0
@@ -132,24 +120,12 @@ def main(args):
     e = round(best[4]*100.0)/100.0
     logger.info('%s (%s, %s, %s, %s, %s) = %s', args.i, r, dx, dy, dz, e, score)
     
-    ### Run z-method ###
-    logger.info(f'MSE(knees)   MSE(exp)   Cost(tr)   Cost(kn) RMSPE(knees) RMPSE(exp)')
-    logger.info(f'-------------------------------------------------------------------')
-    knees = compute_knee_points(r, dx, dy, dz, e)
-    error_mse = evaluation.mse(points, knees, expected, evaluation.Strategy.knees)
-    error_mse_exp = evaluation.mse(points, knees, expected, evaluation.Strategy.expected)
-    error_rmspe = evaluation.rmspe(points, knees, expected, evaluation.Strategy.knees)
-    error_rmspe_exp = evaluation.rmspe(points, knees, expected, evaluation.Strategy.expected)
-    _,_,_,_,cost_trace = evaluation.accuracy_trace (points, knees)
-    _,_,_,_,cost_knee = evaluation.accuracy_knee (points, knees)
-    logger.info(f'{error_mse:10.2E} {error_mse_exp:10.2E} {cost_trace:10.2E} {cost_knee:10.2E} {error_rmspe:12.2E} {error_rmspe_exp:10.2E}')
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Z-Method Optimal Knee')
     parser.add_argument('-i', type=str, required=True, help='input file')
     parser.add_argument('-p', type=int, help='population size', default=20)
-    parser.add_argument('-l', type=int, help='number of loops (iterations)', default=200)
+    parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
     args = parser.parse_args()
     
     main(args)
