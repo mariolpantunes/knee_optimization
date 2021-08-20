@@ -6,10 +6,11 @@ __version__ = '0.1'
 __email__ = 'mariolpantunes@gmail.com'
 __status__ = 'Development'
 
+
 import os
+import re
 import csv
 import math
-from tokenize import ContStr
 import joblib
 import logging
 import tempfile
@@ -29,11 +30,13 @@ logger = logging.getLogger(__name__)
 
 
 # Global variable for optimization method
-points = None
 args = None
+traces = []
+expected = []
+
 x_max = None
 y_range = None
-expected = None
+
 
 # Ram cache
 cost_cache = {}
@@ -47,18 +50,21 @@ memory = joblib.Memory(location, verbose=0)
 rdp_cache = memory.cache(rdp.rdp)
 
 
-def compute_knee_cost(r, dx, dy, dz, e):
+def compute_knee_cost(r, dx, dy, dz, ex, ey):
     # RDP
     points_reduced, removed = rdp_cache(points, r)
         
     ## Knee detection code ##
     knees = zmethod.knees(points_reduced, dx=dx, dy=dy, dz=dz, x_max=x_max, y_range=y_range)
-    knees = knees[knees>0]
-    knees = pp.add_points_even(points, points_reduced, knees, removed, tx=e, ty=e)
+    knees = knees[knees > 0]
+    knees = pp.add_points_even(points, points_reduced, knees, removed, tx=ex, ty=ey)
 
+    ## Average cost
     cost_a = evaluation.rmspe(points, knees, expected, evaluation.Strategy.knees)
     cost_b = evaluation.rmspe(points, knees, expected, evaluation.Strategy.expected)
-    cost = (cost_a+cost_b)/2.0
+    #cost = (cost_a+cost_b)/2.0
+
+    cost = max(cost_a, cost_b)
 
     return cost
 
@@ -72,18 +78,28 @@ def objective(p):
     dx = round(p[1]*100.0)/100.0
     dy = round(p[2]*100.0)/100.0
     dz = round(p[3]*100.0)/100.0
-    e = round(p[4]*100.0)/100.0
+    ex = round(p[4]*100.0)/100.0
+    ey = round(p[5]*100.0)/100.0
 
-    if (r, dx, dy, dz, e) in cost_cache:
-        return cost_cache[(r, dx, dy, dz, e)]
+    if (r, dx, dy, dz, ex, ey) in cost_cache:
+        return cost_cache[(r, dx, dy, dz, ex, ey)]
     else:
-        cost = compute_knee_cost(r, dx, dy, dz, e)
-        cost_cache[(r, dx, dy, dz, e)] = cost
+        cost = compute_knee_cost(r, dx, dy, dz, ex, ey)
+        cost_cache[(r, dx, dy, dz, ex, ey)] = cost
         return cost
 
 
 def main(args):
-    # Get the points
+    # Get all files from the input folder
+    print(args.i)
+    files = []
+    for f in os.listdir(args.i):
+        if re.match(r'w[0-9]+-(arc|lru).csv', f):
+            files.append(f)
+    files.sort()
+    print(files)
+
+    '''# Get the points
     global points 
     points = np.genfromtxt(args.i, delimiter=',')
 
@@ -108,7 +124,7 @@ def main(args):
     expected = np.array(expected)
 
     # Run the Genetic Optimization
-    bounds = np.asarray([[.85, .95], [.01, .1], [.01, .1], [.01, .1], [.01, .1]])
+    bounds = np.asarray([[.85, .95], [.01, .1], [.01, .1], [.01, .1], [.01, .1], [.01, .1]])
     #best, score = de.differential_evolution(objective, bounds, crossover, mutation, n_iter=args.l, n_pop=args.p)
     best, score = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p)
 
@@ -117,13 +133,14 @@ def main(args):
     dx = round(best[1]*100.0)/100.0
     dy = round(best[2]*100.0)/100.0
     dz = round(best[3]*100.0)/100.0
-    e = round(best[4]*100.0)/100.0
-    logger.info('%s (%s, %s, %s, %s, %s) = %s', args.i, r, dx, dy, dz, e, score)
+    ex = round(best[4]*100.0)/100.0
+    ey = round(best[5]*100.0)/100.0
+    logger.info('%s (%s, %s, %s, %s, %s, %s) = %s', args.i, r, dx, dy, dz, ex, ey, score)'''
     
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Z-Method Optimal Knee')
-    parser.add_argument('-i', type=str, required=True, help='input file')
+    parser.add_argument('-i', type=str, required=True, help='input folder')
     parser.add_argument('-p', type=int, help='population size', default=20)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
     args = parser.parse_args()
