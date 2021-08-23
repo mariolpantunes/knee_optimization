@@ -18,6 +18,10 @@ import argparse
 import numpy as np
 
 
+from enum import Enum
+from matplotlib import pyplot
+
+
 import knee.rdp as rdp
 import optimization.de as de
 import knee.zmethod as zmethod
@@ -29,17 +33,21 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
 
+class Metric(Enum):
+    avg = 'avg'
+    max = 'max'
+
+    def __str__(self):
+        return self.value
+
+
 # Global variable for optimization method
 args = None
 traces = []
-expected = []
+x_max = []
+y_range = []
+expecteds = []
 
-x_max = None
-y_range = None
-
-
-# Ram cache
-cost_cache = {}
 
 # joblib cache
 location = tempfile.gettempdir()
@@ -50,27 +58,49 @@ memory = joblib.Memory(location, verbose=0)
 rdp_cache = memory.cache(rdp.rdp)
 
 
-def compute_knee_cost(r, dx, dy, dz, ex, ey):
+def compute_knee_cost(trace, expected, x, y, r, dx, dy, dz, ex, ey):
     # RDP
-    points_reduced, removed = rdp_cache(points, r)
-        
+    points_reduced, removed = rdp_cache(trace, r)
+
     ## Knee detection code ##
-    knees = zmethod.knees(points_reduced, dx=dx, dy=dy, dz=dz, x_max=x_max, y_range=y_range)
+    knees = zmethod.knees(points_reduced, dx=dx, dy=dy, dz=dz, x_max=x, y_range=y)
     knees = knees[knees > 0]
-    knees = pp.add_points_even(points, points_reduced, knees, removed, tx=ex, ty=ey)
+    knees = pp.add_points_even(trace, points_reduced, knees, removed, tx=ex, ty=ey)
 
     ## Average cost
-    cost_a = evaluation.rmspe(points, knees, expected, evaluation.Strategy.knees)
-    cost_b = evaluation.rmspe(points, knees, expected, evaluation.Strategy.expected)
-    #cost = (cost_a+cost_b)/2.0
+    cost_a = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.knees)
+    cost_b = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.expected)
 
-    cost = max(cost_a, cost_b)
+    return cost_a, cost_b
 
-    return cost
 
-# Knees cache
-#cost_cache = memory.cache(compute_knee_cost)
+# Cost cache
+knee_cost_cache = memory.cache(compute_knee_cost)
 
+
+def compute_knees_cost(r, dx, dy, dz, ex, ey):
+    costs = []
+
+    for i in range(len(traces)):
+        trace = traces[i]
+        expected = expecteds[i]
+        x = x_max[i]
+        y = y_range[i]
+
+        cost_a, cost_b = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
+        
+        if args.m is Metric.max:
+            cost = max(cost_a, cost_b)
+        else:
+            cost = (cost_a+cost_b)/2.0
+        costs.append(cost)
+    
+    costs = np.array(costs)
+
+    if args.m is Metric.max:
+        return np.amax(costs) 
+    else:
+        return np.average(costs)
 
 def objective(p):
     # Round input parameters 
@@ -81,52 +111,45 @@ def objective(p):
     ex = round(p[4]*100.0)/100.0
     ey = round(p[5]*100.0)/100.0
 
-    if (r, dx, dy, dz, ex, ey) in cost_cache:
-        return cost_cache[(r, dx, dy, dz, ex, ey)]
-    else:
-        cost = compute_knee_cost(r, dx, dy, dz, ex, ey)
-        cost_cache[(r, dx, dy, dz, ex, ey)] = cost
-        return cost
+    return compute_knees_cost(r, dx, dy, dz, ex, ey)
 
 
 def main(args):
     # Get all files from the input folder
-    print(args.i)
+    logger.info(f'Base path: {args.i}')
     files = []
     for f in os.listdir(args.i):
         if re.match(r'w[0-9]+-(arc|lru).csv', f):
             files.append(f)
     files.sort()
-    print(files)
 
-    '''# Get the points
-    global points 
-    points = np.genfromtxt(args.i, delimiter=',')
+    # Get the traces 
+    global traces, x_max, y_range, expecteds
+    for f in files:
+        path = os.path.join(os.path.normpath(args.i), f)
+        points = np.genfromtxt(path, delimiter=',')
+        traces.append(points)
 
-    # Get original x_max and y_ranges
-    global x_max
-    x_max = [max(x) for x in zip(*points)][0]
-    global y_range
-    y_range = [[max(y),min(y)] for y in zip(*points)][1]
+        # Get original x_max and y_ranges
+        x_max.append([max(x) for x in zip(*points)][0])
+        y_range.append([[max(y),min(y)] for y in zip(*points)][1]) 
 
-    # Get the expected values
-    global expected
-    dirname = os.path.dirname(args.i)
-    filename = os.path.splitext(os.path.basename(args.i))[0]
-    expected_file = os.path.join(os.path.normpath(dirname), f'{filename}_expected.csv')
+        # Get the expected values
+        filename = os.path.splitext(f)[0]
+        expected_file = os.path.join(os.path.normpath(args.i), f'{filename}_expected.csv')
 
-    if os.path.exists(expected_file):
-        with open(expected_file, 'r') as f:
-            reader = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
-            expected = list(reader)
-    else:
-        expected = []
-    expected = np.array(expected)
-
-    # Run the Genetic Optimization
-    bounds = np.asarray([[.85, .95], [.01, .1], [.01, .1], [.01, .1], [.01, .1], [.01, .1]])
-    #best, score = de.differential_evolution(objective, bounds, crossover, mutation, n_iter=args.l, n_pop=args.p)
-    best, score = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p)
+        e = []
+        if os.path.exists(expected_file):
+            with open(expected_file, 'r') as f:
+                reader = csv.reader(f, quoting=csv.QUOTE_NONNUMERIC)
+                e = list(reader)
+        expecteds.append(np.array(e))
+    logger.info(f'Loaded {len(traces)} trace(s)')
+    
+    # Run the Differential Evolution Optimization
+    logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
+    bounds = np.asarray([[.85, .95], [.01, .2], [.01, .2], [.01, .2], [.01, .2], [.01, .2]])
+    best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, debug=True)
 
     # Round input parameters
     r = round(best[0]*100.0)/100.0
@@ -135,14 +158,33 @@ def main(args):
     dz = round(best[3]*100.0)/100.0
     ex = round(best[4]*100.0)/100.0
     ey = round(best[5]*100.0)/100.0
-    logger.info('%s (%s, %s, %s, %s, %s, %s) = %s', args.i, r, dx, dy, dz, ex, ey, score)'''
+    logger.info('Best configuration (%s, %s, %s, %s, %s, %s) = %s', r, dx, dy, dz, ex, ey, score)
+
+    # Plot the optimization evolution
+    pyplot.plot(iter, '.-')
+    pyplot.xlabel('Iteration')
+    pyplot.ylabel('Cost Function')
+    pyplot.savefig('optimization.pdf', bbox_inches='tight')
+    pyplot.close()
     
+    # Compute the RMSPE for all the traces using the cache
+    logger.info(f'Files, RMSPE(k), RMSPE(E)')
+    for i in range(len(traces)):
+        trace = traces[i]
+        expected = expecteds[i]
+        x = x_max[i]
+        y = y_range[i]
+
+        cost_a, cost_b = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
+        logger.info(f'{files[i]}, {cost_a}, {cost_b}')
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Z-Method Optimal Knee')
     parser.add_argument('-i', type=str, required=True, help='input folder')
-    parser.add_argument('-p', type=int, help='population size', default=20)
+    parser.add_argument('-p', type=int, help='population size', default=30)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
+    parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='avg')
     args = parser.parse_args()
     
     main(args)
