@@ -51,7 +51,8 @@ expecteds = []
 
 # joblib cache
 location = tempfile.gettempdir()
-memory = joblib.Memory(location, verbose=0)
+limit = 256 * 1024
+memory = joblib.Memory(location, bytes_limit=limit, verbose=0)
 
 
 # RDP cache
@@ -149,7 +150,7 @@ def main(args):
     # Run the Differential Evolution Optimization
     logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
     bounds = np.asarray([[.85, .95], [.01, .2], [.01, .2], [.01, .2], [.01, .2], [.01, .2]])
-    best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, debug=True)
+    best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, cached=False, debug=True)
 
     # Round input parameters
     r = round(best[0]*100.0)/100.0
@@ -168,20 +169,24 @@ def main(args):
     pyplot.close()
     
     # Compute the RMSPE for all the traces using the cache
-    logger.info(f'Files, RMSPE(k), RMSPE(E)')
-    for i in range(len(traces)):
-        trace = traces[i]
-        expected = expecteds[i]
-        x = x_max[i]
-        y = y_range[i]
+    with open(args.o, 'w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(['Files', 'RMSPE(k)', 'RMSPE(E)'])
 
-        cost_a, cost_b = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
-        logger.info(f'{files[i]}, {cost_a}, {cost_b}')
+        for i in range(len(traces)):
+            trace = traces[i]
+            expected = expecteds[i]
+            x = x_max[i]
+            y = y_range[i]
+
+            cost_a, cost_b = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
+            writer.writerow([files[i], cost_a, cost_b])
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Z-Method Optimal Knee')
     parser.add_argument('-i', type=str, required=True, help='input folder')
+    parser.add_argument('-o', type=str, help='output CSV', default='results.csv')
     parser.add_argument('-p', type=int, help='population size', default=30)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
     parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='avg')
