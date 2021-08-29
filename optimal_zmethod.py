@@ -67,6 +67,8 @@ def compute_knee_cost(trace, expected, x, y, r, dx, dy, dz, ex, ey):
     knees = zmethod.knees(points_reduced, dx=dx, dy=dy, dz=dz, x_max=x, y_range=y)
     knees = knees[knees > 0]
     knees = pp.add_points_even(trace, points_reduced, knees, removed, tx=ex, ty=ey)
+    if len(knees) <= 1:
+        return float('inf'), float('inf')
 
     ## Average cost
     cost_a = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.knees)

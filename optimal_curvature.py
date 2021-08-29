@@ -68,10 +68,15 @@ def compute_knee_cost(trace, expected, r, cs, ct, ex, ey):
 
     ## Knee detection code ##
     knees = curvature.multi_knee(points_reduced)
+    if len(knees) == 0:
+        return float('inf'), float('inf')
+    
     t_k = pp.filter_worst_knees(points_reduced, knees)
     t_k = pp.filter_corner_knees(points_reduced, t_k, cs)
     filtered_knees = pp.filter_clustring(points_reduced, t_k, clustering.average_linkage, ct, ClusterRanking.left)
     knees = pp.add_points_even(trace, points_reduced, filtered_knees, removed, tx=ex, ty=ey)
+    if len(knees) <= 1:
+        return float('inf'), float('inf')
 
     ## Average cost
     cost_a = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.knees)
