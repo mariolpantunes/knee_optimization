@@ -157,7 +157,7 @@ def main(args):
     # Run the Differential Evolution Optimization
     logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
     bounds = np.asarray([[.85, .95], [.01, .2], [.01, .2], [.01, .2], [.01, .2], [.01, .2]])
-    best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, cached=False, debug=True)
+    best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
 
     # Round input parameters
     r = round(best[0]*100.0)/100.0
@@ -193,6 +193,7 @@ if __name__ == '__main__':
     parser.add_argument('-o', type=str, help='output CSV', default='results.csv')
     parser.add_argument('-p', type=int, help='population size', default=30)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
+    parser.add_argument('-c', type=int, help='number of cores', default=-1)
     parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='avg')
     args = parser.parse_args()
     
