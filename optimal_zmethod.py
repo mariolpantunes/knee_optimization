@@ -151,7 +151,7 @@ def main(args):
     
     # Run the Differential Evolution Optimization
     logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
-    bounds = np.asarray([[.85, .95], [.01, .2], [.01, .2], [.01, .2], [.01, .2], [.01, .2]])
+    bounds = np.asarray([[.9, .95], [.01, .2], [.01, .2], [.01, .2], [.05, .1], [.05, .1]])
     best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, cached=False, debug=True)
 
     # Round input parameters
