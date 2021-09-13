@@ -68,13 +68,13 @@ def compute_knee_cost(trace, expected, x, y, r, dx, dy, dz, ex, ey):
     knees = knees[knees > 0]
     knees = pp.add_points_even(trace, points_reduced, knees, removed, tx=ex, ty=ey)
     if len(knees) == 0:
-        return float('inf'), float('inf')
+        return float('inf'), float('inf'), 0
 
     ## Average cost
     cost_a = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.knees)
     cost_b = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.expected)
 
-    return cost_a, cost_b
+    return cost_a, cost_b, len(knees)
 
 
 # Cost cache
@@ -90,7 +90,7 @@ def compute_knees_cost(r, dx, dy, dz, ex, ey):
         x = x_max[i]
         y = y_range[i]
 
-        cost_a, cost_b = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
+        cost_a, cost_b, _ = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
         
         if args.m is Metric.max:
             cost = max(cost_a, cost_b)
@@ -170,10 +170,12 @@ def main(args):
     pyplot.savefig(args.g, bbox_inches='tight')
     pyplot.close()
     
+    nk = []
+
     # Compute the RMSPE for all the traces using the cache
     with open(args.o, 'w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(['Files', 'RMSPE(k)', 'RMSPE(E)'])
+        writer.writerow(['Files', 'RMSPE(k)', 'RMSPE(E)', 'N_Knees'])
 
         for i in range(len(traces)):
             trace = traces[i]
@@ -181,8 +183,13 @@ def main(args):
             x = x_max[i]
             y = y_range[i]
 
-            cost_a, cost_b = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
-            writer.writerow([files[i], cost_a, cost_b])
+            cost_a, cost_b, n_knees = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
+            writer.writerow([files[i], cost_a, cost_b, n_knees])
+            nk.append(n_knees)
+
+    # Output the number of knees
+    nk = np.array(nk)
+    logger.info(f'Average Number of knees ({np.median(nk)}, {np.average(nk)}, {np.std(nk)})')
 
 
 if __name__ == '__main__':
