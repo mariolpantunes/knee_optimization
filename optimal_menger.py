@@ -156,7 +156,7 @@ def main(args):
     
     # Run the Differential Evolution Optimization
     logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
-    bounds = np.asarray([[.9, .95], [.01, .1], [.01, .1], [.05, .1], [.05, .1]])
+    bounds = np.asarray([[.9, .95], [.1, .5], [.01, .15], [.03, .1], [.03, .1]])
     best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
 
     # Round input parameters
@@ -171,7 +171,7 @@ def main(args):
     pyplot.plot(iter, '.-')
     pyplot.xlabel('Iteration')
     pyplot.ylabel('Cost Function')
-    pyplot.savefig('optimization.pdf', bbox_inches='tight')
+    pyplot.savefig(args.g, bbox_inches='tight')
     pyplot.close()
     
     # Compute the RMSPE for all the traces using the cache
@@ -190,11 +190,12 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Z-Method Optimal Knee')
     parser.add_argument('-i', type=str, required=True, help='input folder')
-    parser.add_argument('-o', type=str, help='output CSV', default='results.csv')
+    parser.add_argument('-o', type=str, help='output CSV', default='results_menger.csv')
     parser.add_argument('-p', type=int, help='population size', default=50)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
     parser.add_argument('-c', type=int, help='number of cores', default=-1)
     parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='avg')
+    parser.add_argument('-g', type=str, help='output plot', default='plot_menger.pdf')
     args = parser.parse_args()
     
     main(args)
