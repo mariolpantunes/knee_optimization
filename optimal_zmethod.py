@@ -11,7 +11,6 @@ import os
 import re
 import csv
 import math
-import joblib
 import logging
 import tempfile
 import argparse
@@ -36,6 +35,7 @@ logger = logging.getLogger(__name__)
 class Metric(Enum):
     avg = 'avg'
     max = 'max'
+    mcc = 'mcc'
 
     def __str__(self):
         return self.value
@@ -49,61 +49,64 @@ y_range = []
 expecteds = []
 
 
-# joblib cache
-location = tempfile.gettempdir()
-limit = 256 * 1024
-memory = joblib.Memory(location, bytes_limit=limit, verbose=0)
+RDP_CACHE = {}
+COST_CACHE = {}
 
 
-# RDP cache
-rdp_cache = memory.cache(rdp.rdp)
-
-
-def compute_knee_cost(trace, expected, x, y, r, dx, dy, dz, ex, ey):
+def compute_knee_cost(idx, r, dx, dy, dz):
+    trace = traces[idx]
+    expected = expecteds[idx]
+    x = x_max[idx]
+    y = y_range[idx]
+    
     # RDP
-    points_reduced, removed = rdp_cache(trace, r)
+    if (idx,r) not in RDP_CACHE:
+        RDP_CACHE[(idx,r)] = rdp.rdp(trace, r)
+    points_reduced, removed = RDP_CACHE[(idx, r)]
 
     ## Knee detection code ##
     knees = zmethod.knees(points_reduced, dx=dx, dy=dy, dz=dz, x_max=x, y_range=y)
     knees = knees[knees > 0]
-    knees = pp.add_points_even(trace, points_reduced, knees, removed, tx=ex, ty=ey)
+    knees = pp.add_points_even(trace, points_reduced, knees, removed, tx=0.05, ty=0.05)
     if len(knees) == 0:
         return float('inf'), float('inf'), 0
 
-    ## Average cost
+    ## RMSPE cost
     cost_a = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.knees)
     cost_b = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.expected)
 
-    return cost_a, cost_b, len(knees)
+    ## MCC
+    cm = evaluation.cm(trace, knees, expected)
+    mcc = evaluation.mcc(cm)
+
+    return cost_a, cost_b, len(knees), mcc
 
 
-# Cost cache
-knee_cost_cache = memory.cache(compute_knee_cost)
-
-
-def compute_knees_cost(r, dx, dy, dz, ex, ey):
+def compute_knees_cost(r, dx, dy, dz):
     costs = []
 
     for i in range(len(traces)):
-        trace = traces[i]
-        expected = expecteds[i]
-        x = x_max[i]
-        y = y_range[i]
+        if (i, r, dx, dy, dz) not in COST_CACHE:
+            COST_CACHE[(i, r, dx, dy, dz)] = compute_knee_cost(i, r, dx, dy, dz)
 
-        cost_a, cost_b, _ = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
+        cost_a, cost_b, _, mcc = COST_CACHE[(i, r, dx, dy, dz)]
         
         if args.m is Metric.max:
             cost = max(cost_a, cost_b)
-        else:
+        elif args.m is Metric.avg:
             cost = (cost_a+cost_b)/2.0
+        else:
+            cost = 1.0 - mcc
         costs.append(cost)
     
     costs = np.array(costs)
 
     if args.m is Metric.max:
         return np.amax(costs) 
-    else:
+    elif args.m is Metric.avg:
         return np.average(costs)
+    else:
+        return np.amax(costs) 
 
 def objective(p):
     # Round input parameters 
@@ -111,10 +114,8 @@ def objective(p):
     dx = round(p[1]*100.0)/100.0
     dy = round(p[2]*100.0)/100.0
     dz = round(p[3]*100.0)/100.0
-    ex = round(p[4]*100.0)/100.0
-    ey = round(p[5]*100.0)/100.0
 
-    return compute_knees_cost(r, dx, dy, dz, ex, ey)
+    return compute_knees_cost(r, dx, dy, dz)
 
 
 def main(args):
@@ -151,7 +152,7 @@ def main(args):
     
     # Run the Differential Evolution Optimization
     logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
-    bounds = np.asarray([[.9, .95], [.01, .15], [.01, .15], [.01, .15], [.03, .1], [.03, .1]])
+    bounds = np.asarray([[.9, .95], [.01, .1], [.01, .1], [.01, .1]])
     best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
 
     # Round input parameters
@@ -159,9 +160,8 @@ def main(args):
     dx = round(best[1]*100.0)/100.0
     dy = round(best[2]*100.0)/100.0
     dz = round(best[3]*100.0)/100.0
-    ex = round(best[4]*100.0)/100.0
-    ey = round(best[5]*100.0)/100.0
-    logger.info('Best configuration (%s, %s, %s, %s, %s, %s) = %s', r, dx, dy, dz, ex, ey, score)
+
+    logger.info('Best configuration (%s, %s, %s, %s) = %s', r, dx, dy, dz, score)
 
     # Plot the optimization evolution
     pyplot.plot(iter, '.-')
@@ -175,16 +175,11 @@ def main(args):
     # Compute the RMSPE for all the traces using the cache
     with open(args.o, 'w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(['Files', 'RMSPE(k)', 'RMSPE(E)', 'N_Knees'])
+        writer.writerow(['Files', 'RMSPE(k)', 'RMSPE(E)', 'MCC', 'N_Knees'])
 
         for i in range(len(traces)):
-            trace = traces[i]
-            expected = expecteds[i]
-            x = x_max[i]
-            y = y_range[i]
-
-            cost_a, cost_b, n_knees = knee_cost_cache(trace, expected, x, y, r, dx, dy, dz, ex, ey)
-            writer.writerow([files[i], cost_a, cost_b, n_knees])
+            cost_a, cost_b, n_knees, mcc = COST_CACHE[(i, r, dx, dy, dz)]
+            writer.writerow([files[i], cost_a, cost_b, mcc, n_knees])
             nk.append(n_knees)
 
     # Output the number of knees
