@@ -10,15 +10,11 @@ __status__ = 'Development'
 import os
 import re
 import csv
-import math
+import joblib
 import logging
 import tempfile
 import argparse
 import numpy as np
-
-
-from enum import Enum
-from matplotlib import pyplot
 
 
 import knee.rdp as rdp
@@ -26,6 +22,10 @@ import optimization.de as de
 import knee.zmethod as zmethod
 import knee.postprocessing as pp
 import knee.evaluation as evaluation
+
+
+from enum import Enum
+from matplotlib import pyplot
 
 
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -49,20 +49,29 @@ y_range = []
 expecteds = []
 
 
-RDP_CACHE = {}
-COST_CACHE = {}
+# joblib cache
+location = tempfile.gettempdir()
+limit = 256 * 1024
+memory = joblib.Memory(location, bytes_limit=limit, verbose=0)
 
 
-def compute_knee_cost(idx, r, dx, dy, dz):
+def compute_rdp(idx, r):
+    trace = traces[idx]
+    return rdp.rdp(trace, r)
+
+
+# RDP cache
+rdp_cache = memory.cache(compute_rdp)
+
+
+def knee_cost(idx, r, dx, dy, dz):
     trace = traces[idx]
     expected = expecteds[idx]
     x = x_max[idx]
     y = y_range[idx]
     
     # RDP
-    if (idx,r) not in RDP_CACHE:
-        RDP_CACHE[(idx,r)] = rdp.rdp(trace, r)
-    points_reduced, removed = RDP_CACHE[(idx, r)]
+    points_reduced, removed = rdp_cache(idx, r)
 
     ## Knee detection code ##
     knees = zmethod.knees(points_reduced, dx=dx, dy=dy, dz=dz, x_max=x, y_range=y)
@@ -82,14 +91,15 @@ def compute_knee_cost(idx, r, dx, dy, dz):
     return cost_a, cost_b, len(knees), mcc
 
 
+# Cost cache
+knee_cost_cache = memory.cache(knee_cost)
+
+
 def compute_knees_cost(r, dx, dy, dz):
     costs = []
 
     for i in range(len(traces)):
-        if (i, r, dx, dy, dz) not in COST_CACHE:
-            COST_CACHE[(i, r, dx, dy, dz)] = compute_knee_cost(i, r, dx, dy, dz)
-
-        cost_a, cost_b, _, mcc = COST_CACHE[(i, r, dx, dy, dz)]
+        cost_a, cost_b, _, mcc = knee_cost_cache(i, r, dx, dy, dz)
         
         if args.m is Metric.max:
             cost = max(cost_a, cost_b)
@@ -107,6 +117,7 @@ def compute_knees_cost(r, dx, dy, dz):
         return np.average(costs)
     else:
         return np.amax(costs) 
+
 
 def objective(p):
     # Round input parameters 
@@ -127,8 +138,7 @@ def main(args):
             files.append(f)
     files.sort()
 
-    # Get the traces 
-    global traces, x_max, y_range, expecteds
+    # Get the traces
     for f in files:
         path = os.path.join(os.path.normpath(args.i), f)
         points = np.genfromtxt(path, delimiter=',')
@@ -178,7 +188,7 @@ def main(args):
         writer.writerow(['Files', 'RMSPE(k)', 'RMSPE(E)', 'MCC', 'N_Knees'])
 
         for i in range(len(traces)):
-            cost_a, cost_b, n_knees, mcc = COST_CACHE[(i, r, dx, dy, dz)]
+            cost_a, cost_b, n_knees, mcc = knee_cost_cache(i, r, dx, dy, dz)
             writer.writerow([files[i], cost_a, cost_b, mcc, n_knees])
             nk.append(n_knees)
 

@@ -10,7 +10,6 @@ __status__ = 'Development'
 import os
 import re
 import csv
-import math
 import joblib
 import logging
 import tempfile
@@ -192,6 +191,7 @@ def main(args):
     # Output the number of knees
     nk = np.array(nk)
     logger.info(f'Average Number of knees ({np.median(nk)}, {np.average(nk)}, {np.std(nk)})')
+    memory.clear(warn=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Z-Method Optimal Knee')
