@@ -37,8 +37,16 @@ logger = logging.getLogger(__name__)
 
 
 class Metric(Enum):
-    avg = 'avg'
-    max = 'max'
+    mcc = 'mcc'
+    rmspe = 'rmspe'
+
+    def __str__(self):
+        return self.value
+
+
+class Agglomeration(Enum):
+    average = 'avg'
+    maximum = 'max'
 
     def __str__(self):
         return self.value
@@ -54,72 +62,83 @@ expecteds = []
 
 # joblib cache
 location = tempfile.gettempdir()
-limit = 256 * 1024
+limit = 512 * 1024
 memory = joblib.Memory(location, bytes_limit=limit, verbose=0)
 
 
+def compute_rdp(idx, r):
+    trace = traces[idx]
+    return rdp.rdp(trace, r)
+
+
 # RDP cache
-rdp_cache = memory.cache(rdp.rdp)
+rdp_cache = memory.cache(compute_rdp)
 
 
-def compute_knee_cost(trace, expected, r, cs, ct, ex, ey):
+def knee_cost(idx, r, cs, ct):
+    trace = traces[idx]
+    expected = expecteds[idx]
+
     # RDP
-    points_reduced, removed = rdp_cache(trace, r)
+    points_reduced, removed = rdp_cache(idx, r)
 
     ## Knee detection code ##
     knees = lmethod.multi_knee(points_reduced)
     if len(knees) == 0:
-        return float('inf'), float('inf'), 0
+        return float('inf'), float('inf'), 0, -1
 
     t_k = pp.filter_worst_knees(points_reduced, knees)
     t_k = pp.filter_corner_knees(points_reduced, t_k, cs)
     filtered_knees = pp.filter_clustring(points_reduced, t_k, clustering.average_linkage, ct, ClusterRanking.left)
-    knees = pp.add_points_even(trace, points_reduced, filtered_knees, removed, tx=ex, ty=ey)
+    knees = pp.add_points_even(trace, points_reduced, filtered_knees, removed, tx=0.05, ty=0.05)
     if len(knees) == 0:
-        return float('inf'), float('inf'), 0
+        return float('inf'), float('inf'), 0, -1
 
-    ## Average cost
+    ## RMSPE cost
     cost_a = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.knees)
     cost_b = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.expected)
 
-    return cost_a, cost_b, len(knees)
+    ## MCC
+    cm = evaluation.cm(trace, knees, expected)
+    mcc = evaluation.mcc(cm)
+
+    return cost_a, cost_b, len(knees), mcc
 
 
 # Cost cache
-knee_cost_cache = memory.cache(compute_knee_cost)
+knee_cost_cache = memory.cache(knee_cost)
 
 
-def compute_knees_cost(r, cs, ct, ex, ey):
+def compute_knees_cost(r, cs, ct):
     costs = []
 
     for i in range(len(traces)):
-        trace = traces[i]
-        expected = expecteds[i]
-
-        cost_a, cost_b, _ = knee_cost_cache(trace, expected, r, cs, ct, ex, ey)
+        cost_a, cost_b, _, mcc = knee_cost_cache(i, r, cs, ct)
         
-        if args.m is Metric.max:
-            cost = max(cost_a, cost_b)
-        else:
-            cost = (cost_a+cost_b)/2.0
+        if args.m is Metric.mcc:
+            cost = 1.0 - mcc
+        elif args.m is Metric.rmspe:
+            if args.a is Agglomeration.maximum:
+                cost = max(cost_a, cost_b)
+            elif args.a is Agglomeration.average:
+                cost = (cost_a+cost_b)/2.0
         costs.append(cost)
     
     costs = np.array(costs)
 
-    if args.m is Metric.max:
+    if args.a is Agglomeration.maximum:
         return np.amax(costs) 
-    else:
+    elif args.a is Agglomeration.average:
         return np.average(costs)
+
 
 def objective(p):
     # Round input parameters 
     r = round(p[0]*100.0)/100.0
     cs = round(p[1]*100.0)/100.0
     ct = round(p[2]*100.0)/100.0
-    ex = round(p[3]*100.0)/100.0
-    ey = round(p[4]*100.0)/100.0
 
-    return compute_knees_cost(r, cs, ct, ex, ey)
+    return compute_knees_cost(r, cs, ct)
 
 
 def main(args):
@@ -156,21 +175,23 @@ def main(args):
     
     # Run the Differential Evolution Optimization
     logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
-    bounds = np.asarray([[.9, .95], [.1, .5], [.01, .15], [.03, .1], [.03, .1]])
-    best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
+    bounds = np.asarray([[.9, .95], [.1, .5], [.01, .1]])
+    best, score, debug = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
 
     # Round input parameters
     r = round(best[0]*100.0)/100.0
     cs = round(best[1]*100.0)/100.0
     ct = round(best[2]*100.0)/100.0
-    ex = round(best[3]*100.0)/100.0
-    ey = round(best[4]*100.0)/100.0
-    logger.info('Best configuration (%s, %s, %s, %s, %s) = %s', r, cs, ct, ex, ey, score)
+    logger.info('Best configuration (%s, %s, %s) = %s', r, cs, ct, score)
 
     # Plot the optimization evolution
-    pyplot.plot(iter, '.-')
+    pyplot.plot(debug[0], '.-', label='best')
+    pyplot.plot(debug[1], '.-', label='average')
+    pyplot.plot(debug[2], '.-', label='worst')
     pyplot.xlabel('Iteration')
     pyplot.ylabel('Cost Function')
+    pyplot.legend()
+    pyplot.xticks(range(args.l))
     pyplot.savefig(args.g, bbox_inches='tight')
     pyplot.close()
     
@@ -179,14 +200,11 @@ def main(args):
     # Compute the RMSPE for all the traces using the cache
     with open(args.o, 'w', newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(['Files', 'RMSPE(k)', 'RMSPE(E)', 'N_Knees'])
+        writer.writerow(['Files', 'RMSPE(k)', 'RMSPE(E)', 'MCC', 'N_Knees'])
 
         for i in range(len(traces)):
-            trace = traces[i]
-            expected = expecteds[i]
-
-            cost_a, cost_b, n_knees = knee_cost_cache(trace, expected, r, cs, ct, ex, ey)
-            writer.writerow([files[i], cost_a, cost_b, n_knees])
+            cost_a, cost_b, n_knees, mcc = knee_cost_cache(i, r, cs, ct)
+            writer.writerow([files[i], cost_a, cost_b, mcc, n_knees])
             nk.append(n_knees)
 
     # Output the number of knees
@@ -198,10 +216,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Z-Method Optimal Knee')
     parser.add_argument('-i', type=str, required=True, help='input folder')
     parser.add_argument('-o', type=str, help='output CSV', default='results_lmethod.csv')
-    parser.add_argument('-p', type=int, help='population size', default=30)
+    parser.add_argument('-p', type=int, help='population size', default=50)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
     parser.add_argument('-c', type=int, help='number of cores', default=-1)
-    parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='avg')
+    parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='rmspe')
+    parser.add_argument('-a', type=Agglomeration, choices=list(Agglomeration), help='Agglomeration type', default='avg')
     parser.add_argument('-g', type=str, help='output plot', default='plot_lmethod.pdf')
     args = parser.parse_args()
     

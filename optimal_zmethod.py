@@ -33,9 +33,16 @@ logger = logging.getLogger(__name__)
 
 
 class Metric(Enum):
-    avg = 'avg'
-    max = 'max'
     mcc = 'mcc'
+    rmspe = 'rmspe'
+
+    def __str__(self):
+        return self.value
+
+
+class Agglomeration(Enum):
+    average = 'avg'
+    maximum = 'max'
 
     def __str__(self):
         return self.value
@@ -51,7 +58,7 @@ expecteds = []
 
 # joblib cache
 location = tempfile.gettempdir()
-limit = 256 * 1024
+limit = 512 * 1024
 memory = joblib.Memory(location, bytes_limit=limit, verbose=0)
 
 
@@ -78,7 +85,7 @@ def knee_cost(idx, r, dx, dy, dz):
     knees = knees[knees > 0]
     knees = pp.add_points_even(trace, points_reduced, knees, removed, tx=0.05, ty=0.05)
     if len(knees) == 0:
-        return float('inf'), float('inf'), 0
+        return float('inf'), float('inf'), 0, -1
 
     ## RMSPE cost
     cost_a = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.knees)
@@ -100,23 +107,22 @@ def compute_knees_cost(r, dx, dy, dz):
 
     for i in range(len(traces)):
         cost_a, cost_b, _, mcc = knee_cost_cache(i, r, dx, dy, dz)
-        
-        if args.m is Metric.max:
-            cost = max(cost_a, cost_b)
-        elif args.m is Metric.avg:
-            cost = (cost_a+cost_b)/2.0
-        else:
+
+        if args.m is Metric.mcc:
             cost = 1.0 - mcc
+        elif args.m is Metric.rmspe:
+            if args.a is Agglomeration.maximum:
+                cost = max(cost_a, cost_b)
+            elif args.a is Agglomeration.average:
+                cost = (cost_a+cost_b)/2.0
         costs.append(cost)
     
     costs = np.array(costs)
 
-    if args.m is Metric.max:
+    if args.a is Agglomeration.maximum:
         return np.amax(costs) 
-    elif args.m is Metric.avg:
+    elif args.a is Agglomeration.average:
         return np.average(costs)
-    else:
-        return np.amax(costs) 
 
 
 def objective(p):
@@ -161,9 +167,9 @@ def main(args):
     logger.info(f'Loaded {len(traces)} trace(s)')
     
     # Run the Differential Evolution Optimization
-    logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
+    logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m}, {args.a})')
     bounds = np.asarray([[.9, .95], [.01, .1], [.01, .1], [.01, .1]])
-    best, score, iter = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
+    best, score, debug = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
 
     # Round input parameters
     r = round(best[0]*100.0)/100.0
@@ -174,9 +180,13 @@ def main(args):
     logger.info('Best configuration (%s, %s, %s, %s) = %s', r, dx, dy, dz, score)
 
     # Plot the optimization evolution
-    pyplot.plot(iter, '.-')
+    pyplot.plot(debug[0], '.-', label='best')
+    pyplot.plot(debug[1], '.-', label='average')
+    pyplot.plot(debug[2], '.-', label='worst')
     pyplot.xlabel('Iteration')
     pyplot.ylabel('Cost Function')
+    pyplot.legend()
+    pyplot.xticks(range(args.l))
     pyplot.savefig(args.g, bbox_inches='tight')
     pyplot.close()
     
@@ -204,7 +214,8 @@ if __name__ == '__main__':
     parser.add_argument('-p', type=int, help='population size', default=50)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
     parser.add_argument('-c', type=int, help='number of cores', default=-1)
-    parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='avg')
+    parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='rmspe')
+    parser.add_argument('-a', type=Agglomeration, choices=list(Agglomeration), help='Agglomeration type', default='avg')
     parser.add_argument('-g', type=str, help='output plot', default='plot_zmethod.pdf')
     args = parser.parse_args()
     
