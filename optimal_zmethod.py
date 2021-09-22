@@ -14,6 +14,7 @@ import joblib
 import logging
 import tempfile
 import argparse
+import statistics
 import numpy as np
 
 
@@ -92,7 +93,7 @@ def knee_cost(idx, r, dx, dy, dz):
     cost_b = evaluation.rmspe(trace, knees, expected, evaluation.Strategy.expected)
 
     ## MCC
-    cm = evaluation.cm(trace, knees, expected)
+    cm = evaluation.cm(trace, knees, expected, t=args.t)
     mcc = evaluation.mcc(cm)
 
     return cost_a, cost_b, len(knees), mcc
@@ -104,9 +105,10 @@ knee_cost_cache = memory.cache(knee_cost)
 
 def compute_knees_cost(r, dx, dy, dz):
     costs = []
+    nks = []
 
     for i in range(len(traces)):
-        cost_a, cost_b, _, mcc = knee_cost_cache(i, r, dx, dy, dz)
+        cost_a, cost_b, nk, mcc = knee_cost_cache(i, r, dx, dy, dz)
 
         if args.m is Metric.mcc:
             cost = 1.0 - mcc
@@ -116,13 +118,15 @@ def compute_knees_cost(r, dx, dy, dz):
             elif args.a is Agglomeration.average:
                 cost = (cost_a+cost_b)/2.0
         costs.append(cost)
-    
+        nks.append(nk)
     costs = np.array(costs)
 
+    # add the cost of the number of knees
+
     if args.a is Agglomeration.maximum:
-        return np.amax(costs) 
+        return np.amax(costs) + max(statistics.mean(nks)-args.k, 0)
     elif args.a is Agglomeration.average:
-        return np.average(costs)
+        return np.average(costs) + max(statistics.mean(nks)-args.k, 0)
 
 
 def objective(p):
@@ -168,16 +172,14 @@ def main(args):
     
     # Run the Differential Evolution Optimization
     logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m}, {args.a})')
-    bounds = np.asarray([[.9, .95], [.01, .1], [.01, .1], [.01, .1]])
-    best, score, debug = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
+    bounds = np.asarray([[.9, .95], [.01, .1], [.01, .1], [.1, 1]])
+    best, _, debug = de.differential_evolution(objective, bounds, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
 
     # Round input parameters
     r = round(best[0]*100.0)/100.0
     dx = round(best[1]*100.0)/100.0
     dy = round(best[2]*100.0)/100.0
     dz = round(best[3]*100.0)/100.0
-
-    logger.info('Best configuration (%s, %s, %s, %s) = %s', r, dx, dy, dz, score)
 
     # Plot the optimization evolution
     pyplot.plot(debug[0], '.-', label='best')
@@ -191,6 +193,9 @@ def main(args):
     pyplot.close()
     
     nk = []
+    rmspe_knee = []
+    rmspe_expected = []
+    mccs = []
 
     # Compute the RMSPE for all the traces using the cache
     with open(args.o, 'w', newline='') as file:
@@ -201,10 +206,15 @@ def main(args):
             cost_a, cost_b, n_knees, mcc = knee_cost_cache(i, r, dx, dy, dz)
             writer.writerow([files[i], cost_a, cost_b, mcc, n_knees])
             nk.append(n_knees)
+            rmspe_knee.append(cost_a)
+            rmspe_expected.append(cost_b)
+            mccs.append(mcc)
+
+    # Output solution results
+    logger.info(f'Best configuration ({r}, {dx}, {dy}, {dz}) = [{statistics.mean(rmspe_knee)}, {statistics.mean(rmspe_expected)}, {statistics.mean(mccs)}]')
 
     # Output the number of knees
-    nk = np.array(nk)
-    logger.info(f'Average Number of knees ({np.median(nk)}, {np.average(nk)}, {np.std(nk)})')
+    logger.info(f'Average Number of knees ({statistics.median(nk)}, {statistics.mean(nk)}, {statistics.stdev(nk)})')
 
 
 if __name__ == '__main__':
@@ -214,9 +224,11 @@ if __name__ == '__main__':
     parser.add_argument('-p', type=int, help='population size', default=50)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
     parser.add_argument('-c', type=int, help='number of cores', default=-1)
+    parser.add_argument('-k', type=int, help='number of knees', default=10)
     parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='rmspe')
     parser.add_argument('-a', type=Agglomeration, choices=list(Agglomeration), help='Agglomeration type', default='avg')
     parser.add_argument('-g', type=str, help='output plot', default='plot_zmethod.pdf')
+    parser.add_argument('-t', type=float, help='CM threshold', default=0.02)
     args = parser.parse_args()
     
     main(args)
