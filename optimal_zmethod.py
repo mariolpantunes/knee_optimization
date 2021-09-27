@@ -84,7 +84,8 @@ def knee_cost(idx, r, dx, dy, dz):
     ## Knee detection code ##
     knees = zmethod.knees(points_reduced, dx=dx, dy=dy, dz=dz, x_max=x, y_range=y)
     knees = knees[knees > 0]
-    knees = pp.add_points_even(trace, points_reduced, knees, removed, tx=0.05, ty=0.05)
+    #knees = pp.add_points_even(trace, points_reduced, knees, removed, tx=0.05, ty=0.05)
+    knees = rdp.mapping(knees, points_reduced, removed)
     if len(knees) == 0:
         return float('inf'), float('inf'), 0, -1
 
@@ -122,9 +123,8 @@ def compute_knees_cost(r, dx, dy, dz):
     costs = np.array(costs)
 
     # add the cost of the number of knees
-
     if args.a is Agglomeration.maximum:
-        return np.amax(costs) + max(statistics.mean(nks)-args.k, 0)
+        return np.amax(costs) + max(max(nks)-args.k, 0)
     elif args.a is Agglomeration.average:
         return np.average(costs) + max(statistics.mean(nks)-args.k, 0)
 
@@ -188,7 +188,7 @@ def main(args):
     pyplot.xlabel('Iteration')
     pyplot.ylabel('Cost Function')
     pyplot.legend()
-    pyplot.xticks(range(args.l))
+    pyplot.xticks(range(0, args.l, 10))
     pyplot.savefig(args.g, bbox_inches='tight')
     pyplot.close()
     
@@ -216,17 +216,20 @@ def main(args):
     # Output the number of knees
     logger.info(f'Average Number of knees ({statistics.median(nk)}, {statistics.mean(nk)}, {statistics.stdev(nk)})')
 
+    # Clean cache
+    memory.clear(warn=False)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Z-Method Optimal Knee')
     parser.add_argument('-i', type=str, required=True, help='input folder')
     parser.add_argument('-o', type=str, help='output CSV', default='results_zmethod.csv')
     parser.add_argument('-p', type=int, help='population size', default=50)
-    parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
+    parser.add_argument('-l', type=int, help='number of loops (iterations)', default=50)
     parser.add_argument('-c', type=int, help='number of cores', default=-1)
     parser.add_argument('-k', type=int, help='number of knees', default=10)
-    parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='rmspe')
-    parser.add_argument('-a', type=Agglomeration, choices=list(Agglomeration), help='Agglomeration type', default='avg')
+    parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='mcc')
+    parser.add_argument('-a', type=Agglomeration, choices=list(Agglomeration), help='Agglomeration type', default='max')
     parser.add_argument('-g', type=str, help='output plot', default='plot_zmethod.pdf')
     parser.add_argument('-t', type=float, help='CM threshold', default=0.02)
     args = parser.parse_args()
