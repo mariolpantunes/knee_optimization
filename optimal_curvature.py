@@ -214,13 +214,13 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Z-Method Optimal Knee')
     parser.add_argument('-i', type=str, required=True, help='input folder')
-    parser.add_argument('-o', type=str, help='output CSV', default='results_dfdt.csv')
+    parser.add_argument('-o', type=str, help='output CSV', default='results_curvature.csv')
     parser.add_argument('-p', type=int, help='population size', default=50)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=100)
     parser.add_argument('-c', type=int, help='number of cores', default=-1)
     parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='rmspe')
     parser.add_argument('-a', type=Agglomeration, choices=list(Agglomeration), help='Agglomeration type', default='avg')
-    parser.add_argument('-g', type=str, help='output plot', default='plot_dfdt.pdf')
+    parser.add_argument('-g', type=str, help='output plot', default='plot_curvature.pdf')
     args = parser.parse_args()
     
     main(args)
