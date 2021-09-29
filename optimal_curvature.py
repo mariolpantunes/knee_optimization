@@ -63,7 +63,7 @@ expecteds = []
 # joblib cache
 location = tempfile.gettempdir()
 #memory = joblib.Memory(location, verbose=0)
-cache = dc.Cache(location)
+cache = dc.Cache(location+'/diskCache/curvature')
 
 def compute_rdp(idx, r):
     trace = traces[idx]
