@@ -10,9 +10,9 @@ __status__ = 'Development'
 import os
 import re
 import csv
-import joblib
+#import joblib
 import logging
-import tempfile
+#import tempfile
 import argparse
 import statistics
 import numpy as np
@@ -55,7 +55,8 @@ class Agglomeration(Enum):
 args = None
 traces = []
 expecteds = []
-
+rdp_cache_dic = {}
+cost_cache_dic = {}
 
 # Global variable for optimization method
 args = None
@@ -66,8 +67,8 @@ expecteds = []
 
 
 # joblib cache
-location = tempfile.gettempdir()
-memory = joblib.Memory(location, verbose=0)
+#location = tempfile.gettempdir()
+#memory = joblib.Memory(location, verbose=0)
 
 
 def compute_rdp(idx, r):
@@ -76,7 +77,11 @@ def compute_rdp(idx, r):
 
 
 # RDP cache
-rdp_cache = memory.cache(compute_rdp)
+#rdp_cache = memory.cache(compute_rdp)
+def rdp_cache(idx, r):
+    if (idx, r) not in rdp_cache_dic:
+        rdp_cache_dic[(idx, r)] = compute_rdp(idx, r)
+    return rdp_cache_dic[(idx, r)]
 
 
 def knee_cost(idx, r, cs, ct):
@@ -111,8 +116,11 @@ def knee_cost(idx, r, cs, ct):
 
 
 # Cost cache
-knee_cost_cache = memory.cache(knee_cost)
-
+#knee_cost_cache = memory.cache(knee_cost)
+def knee_cost_cache(idx, r, cs, ct):
+    if (idx, r, cs, ct) not in cost_cache_dic:
+        cost_cache_dic[(idx, r, cs, ct)] = knee_cost(idx, r, cs, ct)
+    return cost_cache_dic[(idx, r, cs, ct)]
 
 def compute_knees_cost(r, cs, ct):
     costs = []

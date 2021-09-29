@@ -1,3 +1,4 @@
+diskcache>=5.2.1 
 matplotlib>=3.4.3 
 git+git://github.com/mariolpantunes/knee@main#egg=knee
 git+git://github.com/mariolpantunes/optimization@main#egg=optimization
