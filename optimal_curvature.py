@@ -89,7 +89,7 @@ def knee_cost(idx, r, cs, ct):
     ## Knee detection code ##
     knees = curvature.multi_knee(points_reduced)
     if len(knees) == 0:
-        return float('inf'), float('inf'), 0
+        return float('inf'), float('inf'), 0, -1
     
     t_k = pp.filter_worst_knees(points_reduced, knees)
     t_k = pp.filter_corner_knees(points_reduced, t_k, cs)
