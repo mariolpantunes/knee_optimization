@@ -99,6 +99,7 @@ def knee_cost(idx, r, cs, ct):
     cm = evaluation.cm(trace, knees, expected)
     mcc = evaluation.mcc(cm)
 
+    #logger.error(f'Trace: {idx} -> ({r}, {cs}, {ct}) -> ({cost_a} {cost_b} {len(knees)} {mcc})')
     return cost_a, cost_b, len(knees), mcc
 
 
@@ -109,20 +110,22 @@ knee_cost_cache = memory.cache(knee_cost)
 def compute_knees_cost(r, cs, ct):
     costs = []
     nks = []
-
-    for i in range(len(traces)):
-        cost_a, cost_b, nk, mcc = knee_cost_cache(i, r, cs, ct)
-        
-        if args.m is Metric.mcc:
-            cost = 1.0 - mcc
-        elif args.m is Metric.rmspe:
-            if args.a is Agglomeration.maximum:
-                cost = max(cost_a, cost_b)
-            elif args.a is Agglomeration.average:
-                cost = (cost_a+cost_b)/2.0
-        costs.append(cost)
-        nks.append(nk)
-    costs = np.array(costs)
+    try:
+        for i in range(len(traces)):
+            cost_a, cost_b, nk, mcc = knee_cost_cache(i, r, cs, ct)
+            
+            if args.m is Metric.mcc:
+                cost = 1.0 - mcc
+            elif args.m is Metric.rmspe:
+                if args.a is Agglomeration.maximum:
+                    cost = max(cost_a, cost_b)
+                elif args.a is Agglomeration.average:
+                    cost = (cost_a+cost_b)/2.0
+            costs.append(cost)
+            nks.append(nk)
+        costs = np.array(costs)
+    except Exception as e:
+        logger.warning(f'Error: {e}')
 
     # add the cost of the number of knees
     if args.a is Agglomeration.maximum:
