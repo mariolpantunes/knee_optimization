@@ -124,11 +124,11 @@ def compute_knees_cost(r, cs, ct):
     nks = []
     
     for i in range(len(traces)):
-        try:
-            cost_a, cost_b, nk, mcc = knee_cost_cache(i, r, cs, ct)
-        except Exception as e:
-            logger.warning(f'Cache error on trace {i} recompute value...')
-            cost_a, cost_b, nk, mcc =  knee_cost(i, r, cs, ct)
+        #try:
+        cost_a, cost_b, nk, mcc = knee_cost_cache(i, r, cs, ct)
+        #except Exception as e:
+        #    logger.warning(f'Cache error on trace {i} recompute value...')
+        #    cost_a, cost_b, nk, mcc =  knee_cost(i, r, cs, ct)
         
         if args.m is Metric.mcc:
             cost = 1.0 - mcc
