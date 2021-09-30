@@ -16,7 +16,7 @@ import tempfile
 import argparse
 import statistics
 import numpy as np
-#import diskcache as dc
+
 
 from enum import Enum
 from matplotlib import pyplot
@@ -55,15 +55,12 @@ class Agglomeration(Enum):
 args = None
 traces = []
 expecteds = []
-#rdp_cache_dic = {}
-#cost_cache_dic = {}
-
 
 
 # joblib cache
 location = tempfile.gettempdir()
 memory = joblib.Memory(location, verbose=0)
-#cache = dc.Cache(location+'/diskCache/curvature')
+
 
 def compute_rdp(idx, r):
     trace = traces[idx]
@@ -72,11 +69,6 @@ def compute_rdp(idx, r):
 
 # RDP cache
 rdp_cache = memory.cache(compute_rdp)
-
-#def rdp_cache(idx, r):
-#    if (idx, r) not in cache:
-#        cache[(idx, r)] = compute_rdp(idx, r)
-#    return cache[(idx, r)]
 
 
 def knee_cost(idx, r, cs, ct):
@@ -113,10 +105,6 @@ def knee_cost(idx, r, cs, ct):
 
 # Cost cache
 knee_cost_cache = memory.cache(knee_cost)
-#def knee_cost_cache(idx, r, cs, ct):
-#    if (idx, r, cs, ct) not in cache:
-#        cache[(idx, r, cs, ct)] = knee_cost(idx, r, cs, ct)
-#    return cache[(idx, r, cs, ct)]
 
 
 def compute_knees_cost(r, cs, ct):
