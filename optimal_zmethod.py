@@ -105,7 +105,7 @@ def knee_cost(idx, r, dx, dy, dz):
     cm = evaluation.cm(trace, knees, expected, t=args.t)
     mcc = evaluation.mcc(cm)
 
-    return cost_a, cost_b, max(len(knees)-len(expected), 0.0), mcc
+    return cost_a, cost_b, len(knees), len(expected), mcc
 
 
 # Cost cache
@@ -118,10 +118,11 @@ knee_cost_cache = memory.cache(knee_cost)
 
 def compute_knees_cost(r, dx, dy, dz):
     costs = []
-    #nks = []
+    nks = []
+    neks = []
 
     for i in range(len(traces)):
-        cost_a, cost_b, nk, mcc = knee_cost_cache(i, r, dx, dy, dz)
+        cost_a, cost_b, nk, nek,  mcc = knee_cost_cache(i, r, dx, dy, dz)
 
         if args.m is Metric.mcc:
             cost = 1.0 - mcc
@@ -130,12 +131,13 @@ def compute_knees_cost(r, dx, dy, dz):
                 cost = max(cost_a, cost_b)
             elif args.a is Agglomeration.average:
                 cost = (cost_a+cost_b)/2.0
-        costs.append(cost+nk)
-        #nks.append(nk)
+        costs.append(cost)
+        nks.append(nk)
+        neks.append(nek)
     costs = np.array(costs)
 
     # add the cost of the number of knees
-    return np.average(costs)
+    return np.average(costs) + max(statistics.mean(nks)-statistics.mean(neks), 0)
     #if args.a is Agglomeration.maximum:
     #    return np.amax(costs) + max(max(nks)-args.k, 0)
     #elif args.a is Agglomeration.average:
