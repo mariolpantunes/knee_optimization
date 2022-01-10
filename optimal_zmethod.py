@@ -218,7 +218,7 @@ def main(args):
         writer.writerow(['Files', 'RMSPE(k)', 'RMSPE(E)', 'MCC', 'N_Knees'])
 
         for i in range(len(traces)):
-            cost_a, cost_b, n_knees, mcc = knee_cost_cache(i, r, dx, dy, dz)
+            cost_a, cost_b, n_knees, _, mcc = knee_cost_cache(i, r, dx, dy, dz)
             writer.writerow([files[i], cost_a, cost_b, mcc, n_knees])
             nk.append(n_knees)
             rmspe_knee.append(cost_a)
