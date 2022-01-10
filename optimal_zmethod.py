@@ -10,9 +10,9 @@ __status__ = 'Development'
 import os
 import re
 import csv
-#import joblib
+import joblib
 import logging
-#import tempfile
+import tempfile
 import argparse
 import statistics
 import numpy as np
@@ -55,12 +55,13 @@ traces = []
 x_max = []
 y_range = []
 expecteds = []
-rdp_cache_dic = {}
-cost_cache_dic = {}
+
+#rdp_cache_dic = {}
+#cost_cache_dic = {}
 
 # joblib cache
-#location = tempfile.gettempdir()
-#memory = joblib.Memory(location, verbose=0)
+location = tempfile.gettempdir()
+memory = joblib.Memory(location, verbose=0)
 
 
 def compute_rdp(idx, r):
@@ -69,11 +70,11 @@ def compute_rdp(idx, r):
 
 
 # RDP cache
-#rdp_cache = memory.cache(compute_rdp)
-def rdp_cache(idx, r):
-    if (idx, r) not in rdp_cache_dic:
-        rdp_cache_dic[(idx, r)] = compute_rdp(idx, r)
-    return rdp_cache_dic[(idx, r)]
+rdp_cache = memory.cache(compute_rdp)
+#def rdp_cache(idx, r):
+#    if (idx, r) not in rdp_cache_dic:
+#        rdp_cache_dic[(idx, r)] = compute_rdp(idx, r)
+#    return rdp_cache_dic[(idx, r)]
 
 
 def knee_cost(idx, r, dx, dy, dz):
@@ -107,11 +108,11 @@ def knee_cost(idx, r, dx, dy, dz):
 
 
 # Cost cache
-#knee_cost_cache = memory.cache(knee_cost)
-def knee_cost_cache(idx, r, dx, dy, dz):
-    if (idx, r, dx, dy, dz) not in cost_cache_dic:
-        cost_cache_dic[(idx, r, dx, dy, dz)] = knee_cost(idx, r, dx, dy, dz)
-    return cost_cache_dic[(idx, r, dx, dy, dz)]
+knee_cost_cache = memory.cache(knee_cost)
+#def knee_cost_cache(idx, r, dx, dy, dz):
+#    if (idx, r, dx, dy, dz) not in cost_cache_dic:
+#        cost_cache_dic[(idx, r, dx, dy, dz)] = knee_cost(idx, r, dx, dy, dz)
+#    return cost_cache_dic[(idx, r, dx, dy, dz)]
 
 
 def compute_knees_cost(r, dx, dy, dz):
