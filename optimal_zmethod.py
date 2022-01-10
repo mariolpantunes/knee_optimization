@@ -182,7 +182,7 @@ def main(args):
     logger.info(f'Loaded {len(traces)} trace(s)')
     
     # Run the Differential Evolution Optimization
-    logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m}, {args.a})')
+    logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
     bounds = np.asarray([[.1, .001], [.01, .1], [.01, .1], [.1, 1]])
     best, _, debug = de.differential_evolution(objective, bounds, variant=args.v, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
 
@@ -240,7 +240,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', type=int, help='number of cores', default=-1)
     #parser.add_argument('-k', type=int, help='number of knees', default=10)
     parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='mcc')
-    parser.add_argument('-a', type=Agglomeration, choices=list(Agglomeration), help='Agglomeration type', default='max')
+    #parser.add_argument('-a', type=Agglomeration, choices=list(Agglomeration), help='Agglomeration type', default='max')
     parser.add_argument('-g', type=str, help='output plot', default='plot_zmethod.pdf')
     parser.add_argument('-t', type=float, help='CM threshold', default=0.01)
     parser.add_argument('-v', type=str, help='DE variant', default='best/1/bin')
