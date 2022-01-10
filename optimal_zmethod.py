@@ -187,7 +187,7 @@ def main(args):
     
     # Run the Differential Evolution Optimization
     logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
-    bounds = np.asarray([[.1, .001], [.01, .1], [.01, .1], [.1, 1]])
+    bounds = np.asarray([[.1, .001], [.01, .2], [.01, .2], [.1, 1]])
     best, _, debug = de.differential_evolution(objective, bounds, variant=args.v, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
 
     # Round input parameters
