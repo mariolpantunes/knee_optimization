@@ -1,3 +1,4 @@
 matplotlib>=3.5.1
+tqdm>=4.62.3
 git+git://github.com/mariolpantunes/knee@main#egg=knee
 git+git://github.com/mariolpantunes/optimization@main#egg=optimization

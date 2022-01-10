@@ -10,6 +10,7 @@ __status__ = 'Development'
 import os
 import re
 import csv
+import tqdm
 import joblib
 import logging
 import tempfile
@@ -85,7 +86,7 @@ def knee_cost(idx, r, dx, dy, dz):
     
     # RDP
     reduced, removed = rdp_cache(idx, r)
-    points_reduced = points[reduced]
+    points_reduced = trace[reduced]
 
     ## Knee detection code ##
 
@@ -184,11 +185,11 @@ def main(args):
     
     # Run the Differential Evolution Optimization
     logger.info(f'Running the Differential Evolution Optimization ({args.p}, {args.l}, {args.m})')
-    bounds = np.asarray([[.1, .001], [.01, .1], [.01, .1], [.1, 1]])
+    bounds = np.asarray([[.1, .01], [.01, .1], [.01, .1], [.1, 1]])
     best, _, debug = de.differential_evolution(objective, bounds, variant=args.v, n_iter=args.l, n_pop=args.p, n_jobs=args.c, cached=False, debug=True)
 
     # Round input parameters
-    r = round(best[0]*1000.0)/1000.0
+    r = round(best[0]*100.0)/100.0
     dx = round(best[1]*100.0)/100.0
     dy = round(best[2]*100.0)/100.0
     dz = round(best[3]*100.0)/100.0
@@ -229,7 +230,7 @@ def main(args):
     logger.info(f'Average Number of knees ({statistics.median(nk)}, {statistics.mean(nk)}, {statistics.stdev(nk)})')
 
     # Clean cache
-    #memory.clear(warn=False)
+    memory.clear(warn=False)
 
 
 if __name__ == '__main__':
