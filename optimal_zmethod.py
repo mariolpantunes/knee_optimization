@@ -83,13 +83,15 @@ def knee_cost(idx, r, dx, dy, dz):
     y = y_range[idx]
     
     # RDP
-    points_reduced, removed = rdp_cache(idx, r)
+    reduced, removed = rdp_cache(idx, r)
+    points_reduced = points[reduced]
 
     ## Knee detection code ##
+
     knees = zmethod.knees(points_reduced, dx=dx, dy=dy, dz=dz, x_max=x, y_range=y)
     knees = knees[knees > 0]
     #knees = pp.add_points_even(trace, points_reduced, knees, removed, tx=0.05, ty=0.05)
-    knees = rdp.mapping(knees, points_reduced, removed)
+    knees = rdp.mapping(knees, reduced, removed)
     if len(knees) == 0:
         return float('inf'), float('inf'), 0, -1
 
@@ -101,7 +103,7 @@ def knee_cost(idx, r, dx, dy, dz):
     cm = evaluation.cm(trace, knees, expected, t=args.t)
     mcc = evaluation.mcc(cm)
 
-    return cost_a, cost_b, len(knees), mcc
+    return cost_a, cost_b, max(len(knees)-len(expected), 0.0), mcc
 
 
 # Cost cache
@@ -114,7 +116,7 @@ def knee_cost_cache(idx, r, dx, dy, dz):
 
 def compute_knees_cost(r, dx, dy, dz):
     costs = []
-    nks = []
+    #nks = []
 
     for i in range(len(traces)):
         cost_a, cost_b, nk, mcc = knee_cost_cache(i, r, dx, dy, dz)
@@ -126,15 +128,16 @@ def compute_knees_cost(r, dx, dy, dz):
                 cost = max(cost_a, cost_b)
             elif args.a is Agglomeration.average:
                 cost = (cost_a+cost_b)/2.0
-        costs.append(cost)
-        nks.append(nk)
+        costs.append(cost+nk)
+        #nks.append(nk)
     costs = np.array(costs)
 
     # add the cost of the number of knees
-    if args.a is Agglomeration.maximum:
-        return np.amax(costs) + max(max(nks)-args.k, 0)
-    elif args.a is Agglomeration.average:
-        return np.average(costs) + max(statistics.mean(nks)-args.k, 0)
+    return np.average(costs)
+    #if args.a is Agglomeration.maximum:
+    #    return np.amax(costs) + max(max(nks)-args.k, 0)
+    #elif args.a is Agglomeration.average:
+    #    return np.average(costs) + max(statistics.mean(nks)-args.k, 0)
 
 
 def objective(p):
@@ -235,7 +238,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', type=int, help='population size', default=50)
     parser.add_argument('-l', type=int, help='number of loops (iterations)', default=30)
     parser.add_argument('-c', type=int, help='number of cores', default=-1)
-    parser.add_argument('-k', type=int, help='number of knees', default=10)
+    #parser.add_argument('-k', type=int, help='number of knees', default=10)
     parser.add_argument('-m', type=Metric, choices=list(Metric), help='Metric type', default='mcc')
     parser.add_argument('-a', type=Agglomeration, choices=list(Agglomeration), help='Agglomeration type', default='max')
     parser.add_argument('-g', type=str, help='output plot', default='plot_zmethod.pdf')
