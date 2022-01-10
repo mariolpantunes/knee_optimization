@@ -164,7 +164,7 @@ def main(args):
     files.sort()
 
     # Get the traces
-    for f in tqdm.tdqm(files):
+    for f in tqdm.tqdm(files):
         path = os.path.join(os.path.normpath(args.i), f)
         points = np.genfromtxt(path, delimiter=',')
         traces.append(points)
